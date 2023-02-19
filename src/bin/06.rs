@@ -23,7 +23,7 @@ pub fn part_two(input: &str) -> Option<usize> {
     // Same idea as above, except now we're looking for a sequence of 14 distinct characters
     let first_marker_index = input
         .as_bytes()
-        .windows(14) 
+        .windows(14)
         .map(|window| {
             window
                 .iter()
