@@ -1,46 +1,37 @@
-use std::{cell::RefCell, collections::HashMap, fmt, rc::Rc};
+use std::collections::HashMap;
 
 pub fn part_one(input: &str) -> Option<u32> {
-    let root_dir = Directory::new_root();
-
     // create the file and directory structure
-    create_files_and_directories(input, root_dir.clone());
+    let root_dir = create_files_and_directories(input);
 
     // create a flattened list of directories with their names and sizes
-    let mut flattened_dirs: Vec<(String, u32, Rc<RefCell<Directory>>)> = vec![];
-    collect_all_directories(&mut flattened_dirs, root_dir.clone());
+    let flattened_dirs = root_dir.get_all_dirs();
 
-    // keep the directories <= 100,000, and sum their sizes
-    flattened_dirs.retain(|(_, size, _)| size <= &100000);
+    // keep the directories with a size <= 100,000, and sum their sizes
     let sum = flattened_dirs
-        .iter()
-        .fold(0, |acc, (_, size, _)| acc + size);
+        .filter(|(_, _, size)| size <= &100000)
+        .fold(0, |acc, (_, _, size)| acc + size);
 
     Some(sum)
 }
 
 pub fn part_two(input: &str) -> Option<u32> {
-    let root_dir = Directory::new_root();
-
     // create the file and directory structure
-    create_files_and_directories(input, root_dir.clone());
-
-    // create a flattened list of directories with their names and sizes
-    let mut flattened_dirs: Vec<(String, u32, Rc<RefCell<Directory>>)> = vec![];
-    collect_all_directories(&mut flattened_dirs, root_dir.clone());
+    let root_dir = create_files_and_directories(input);
 
     // figure out current size and how much space we need
-    let current_size = root_dir.borrow().calc_size();
+    let current_size = root_dir.calc_size();
     let needed_space = 30000000 - (70000000 - current_size);
 
     // sort the directories by increasing size, and find the first one >= needed_space
-    flattened_dirs.sort_by(|a, b| a.1.cmp(&b.1));
+    let mut flattened_dirs: Vec<(&Directory, &str, u32)> = root_dir.get_all_dirs().collect();
+    flattened_dirs.sort_by(|(_, _, a_size), (_, _, b_size)| a_size.cmp(b_size));
     let dir_to_delete = flattened_dirs
         .iter()
-        .find(|(_, size, _)| size >= &needed_space)
+        .find(|(_, _, size)| *size >= needed_space)
         .expect("No directory found to delete!");
 
-    Some(dir_to_delete.1)
+    Some(dir_to_delete.2)
 }
 
 fn main() {
@@ -68,33 +59,15 @@ mod tests {
 
 struct Directory {
     files: HashMap<String, File>,
-    directories: HashMap<String, Rc<RefCell<Directory>>>,
-    parent: Option<Rc<RefCell<Directory>>>,
-}
-
-impl fmt::Debug for Directory {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Directory")
-            .field("files", &self.files)
-            .field("directories", &self.directories)
-            .finish()
-    }
+    directories: HashMap<String, Directory>,
 }
 
 impl Directory {
-    fn new_root() -> Rc<RefCell<Directory>> {
-        Rc::new(RefCell::new(Self {
+    fn new() -> Directory {
+        Self {
             files: HashMap::new(),
             directories: HashMap::new(),
-            parent: None,
-        }))
-    }
-    fn new(parent: Rc<RefCell<Directory>>) -> Rc<RefCell<Directory>> {
-        Rc::new(RefCell::new(Self {
-            files: HashMap::new(),
-            directories: HashMap::new(),
-            parent: Some(parent),
-        }))
+        }
     }
     fn calc_size(&self) -> u32 {
         let mut size = 0_u32;
@@ -102,9 +75,22 @@ impl Directory {
             size += file.size;
         }
         for (_, directory) in &self.directories {
-            size += directory.borrow().calc_size();
+            size += directory.calc_size();
         }
         size
+    }
+    /** Recursively create a flattened list of directories, with their names and sizes */
+    fn get_all_dirs(&self) -> Box<dyn Iterator<Item = (&Directory, &str, u32)> + '_> {
+        Box::new(
+            std::iter::once((self, "self", self.calc_size())).chain(
+                self.directories
+                    .iter()
+                    .map(|(child_dir_name, child_dir)| {
+                        (child_dir, child_dir_name, child_dir.calc_size())
+                    })
+                    .flat_map(|(child_dir, _, _)| child_dir.get_all_dirs()),
+            ),
+        )
     }
 }
 
@@ -127,14 +113,8 @@ enum Command {
 }
 
 enum FileOrDir {
-    File {
-        file: File,
-        name: String,
-    },
-    Dir {
-        dir: Rc<RefCell<Directory>>,
-        name: String,
-    },
+    File { file: File, name: String },
+    Dir,
 }
 
 /** Parse command: '$ cd foo', etc. */
@@ -158,12 +138,9 @@ fn parse_command(raw_str: &str) -> Option<Command> {
 }
 
 /** Parse file or directory name: 'dir foo' or '300 foo.txt' */
-fn parse_file_or_dir(raw_str: &str, parent_dir: Rc<RefCell<Directory>>) -> Option<FileOrDir> {
-    if let Some(dir_name) = raw_str.strip_prefix("dir ") {
-        return Some(FileOrDir::Dir {
-            dir: Directory::new(parent_dir),
-            name: dir_name.to_owned(),
-        });
+fn parse_file_or_dir(raw_str: &str) -> Option<FileOrDir> {
+    if let Some(_) = raw_str.strip_prefix("dir ") {
+        return Some(FileOrDir::Dir);
     } else if let Some((raw_size, file_name)) = raw_str.split_once(' ') {
         let size: u32 = raw_size.parse().expect("Couldn't parse file size!");
         return Some(FileOrDir::File {
@@ -174,60 +151,58 @@ fn parse_file_or_dir(raw_str: &str, parent_dir: Rc<RefCell<Directory>>) -> Optio
     None
 }
 
-/** Create the file and directory structure from the input file */
-fn create_files_and_directories(input: &str, root_dir: Rc<RefCell<Directory>>) {
-    let mut current_dir = root_dir.clone();
+/** Create the file and directory structure from the input file, and return the root folder */
+fn create_files_and_directories(input: &str) -> Directory {
+    // Stacks to keep track of where we are in the directory structure
+    let mut stack_dirs: Vec<Directory> = vec![Directory::new()];
+    let mut stack_names: Vec<String> = vec![String::from("/")];
+
     for raw_str in input.lines() {
         // check if this line is a command
         match parse_command(raw_str) {
-            Some(Command::RootDir) => current_dir = root_dir.clone(),
+            Some(Command::RootDir) => {
+                while stack_dirs.len() > 1 {
+                    stack_dirs.pop();
+                }
+                stack_names = vec![String::from("/")];
+            }
             Some(Command::UpDir) => {
-                current_dir = current_dir
-                    .clone()
-                    .borrow()
-                    .parent
-                    .clone()
-                    .expect("No parent directory found!")
+                let current_dir = stack_dirs.pop().expect("Current directory not found!");
+                let current_dir_name = stack_names.pop().unwrap();
+                stack_dirs
+                    .last_mut()
+                    .expect("Parent directory not found!")
+                    .directories
+                    .entry(current_dir_name)
+                    .or_insert(current_dir); // Would need to add merging here!
             }
             Some(Command::OpenDir { dir_name }) => {
-                current_dir = current_dir
-                    .clone()
-                    .borrow_mut()
-                    .directories
-                    .entry(dir_name)
-                    .or_insert(Directory::new(current_dir.clone()))
-                    .clone()
+                stack_dirs.push(Directory::new());
+                stack_names.push(dir_name);
             }
             Some(Command::ListFiles) => (),
 
             // if line is not a command, parse and insert the files and directories in the current directory
-            _ => match parse_file_or_dir(raw_str, current_dir.clone()) {
+            _ => match parse_file_or_dir(raw_str) {
                 Some(FileOrDir::File { file, name }) => {
-                    current_dir.borrow_mut().files.insert(name, file);
+                    let current_dir = stack_dirs.last_mut().expect("Current directory not found!");
+                    current_dir.files.insert(name, file);
                 }
-                Some(FileOrDir::Dir { dir, name }) => {
-                    current_dir.borrow_mut().directories.insert(name, dir);
-                }
+                Some(FileOrDir::Dir) => (), // ignore directories as we're adding them above
                 None => panic!("Couldn't detect command or file/directory!"),
             },
         }
     }
-}
 
-/** Recursively create a flattened list of directories, with their names and sizes */
-fn collect_all_directories(
-    flattened_dirs: &mut Vec<(String, u32, Rc<RefCell<Directory>>)>,
-    current_dir: Rc<RefCell<Directory>>,
-) {
-    flattened_dirs.append(
-        &mut current_dir
-            .borrow()
+    while stack_dirs.len() > 1 {
+        let current_dir = stack_dirs.pop().expect("Current directory not found!");
+        let current_dir_name = stack_names.pop().unwrap();
+        stack_dirs
+            .last_mut()
+            .expect("Parent directory not found!")
             .directories
-            .iter()
-            .map(|(dir_name, dir)| (dir_name.to_owned(), dir.borrow().calc_size(), dir.clone()))
-            .collect(),
-    );
-    for (_, child_dir) in &current_dir.borrow().directories {
-        collect_all_directories(flattened_dirs, child_dir.clone());
+            .entry(current_dir_name)
+            .or_insert(current_dir); // Would need to add merging here!
     }
+    stack_dirs.pop().unwrap()
 }
