@@ -40,23 +40,23 @@ where
         }
     }
 
-    fn is_in_bounds(&self, coord: GridCoord) -> bool {
+    fn is_in_bounds(&self, coord: &GridCoord) -> bool {
         coord.x < self.width && coord.y < self.height
     }
 
-    pub fn get_cell_mut(&mut self, coord: GridCoord) -> Option<&mut T> {
+    pub fn get_cell_mut(&mut self, coord: &GridCoord) -> Option<&mut T> {
         if !self.is_in_bounds(coord) {
             None
         } else {
-            self.data.get_mut(&coord)
+            self.data.get_mut(coord)
         }
     }
 
-    pub fn get_cell(&self, coord: GridCoord) -> Option<&T> {
+    pub fn get_cell(&self, coord: &GridCoord) -> Option<&T> {
         if !self.is_in_bounds(coord) {
             None
         } else {
-            self.data.get(&coord)
+            self.data.get(coord)
         }
     }
 

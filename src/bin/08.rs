@@ -1,92 +1,90 @@
 use advent_of_code::grid::{Grid, GridCoord};
 
-pub fn part_one(input: &str) -> Option<usize> {
-    #[derive(Clone, Default, Debug)]
-    struct Tree {
-        height: i8,
-        visible_top: bool,
-        visible_left: bool,
-        visible_right: bool,
-        visible_bottom: bool,
-    }
+#[derive(Clone, Default, Debug)]
+struct Tree {
+    height: i8,
+}
 
+enum Direction {
+    UP,
+    DOWN,
+    LEFT,
+    RIGHT,
+}
+impl Direction {
+    fn get_dx_dy(&self) -> (isize, isize) {
+        match self {
+            Direction::UP => (0, -1),
+            Direction::DOWN => (0, 1),
+            Direction::RIGHT => (1, 0),
+            Direction::LEFT => (-1, 0),
+        }
+    }
+}
+
+fn build_tree_grid_from_input(input: &str) -> Grid<Tree> {
     let mut input_lines = input.lines().peekable();
     let mut tree_grid: Grid<Tree> = Grid::new(
         input_lines.peek().unwrap().len(),
         input_lines.clone().count(),
     );
-
     for (y, input_line) in input_lines.enumerate() {
         for (x, raw_height) in input_line.chars().enumerate() {
             let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
+                .get_cell_mut(&GridCoord { x, y })
                 .expect("Cell not found!");
             tree.height =
                 i8::from_str_radix(&raw_height.to_string(), 10).expect("Couldn't parse height!");
         }
     }
+    tree_grid
+}
 
-    // check if each tree is visible from left
-    for y in 0..tree_grid.height {
-        let mut tallest_height: i8 = -1;
-        for x in 0..tree_grid.width {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            if tree.height > tallest_height {
-                tree.visible_left = true;
-                tallest_height = tree.height;
+pub fn part_one(input: &str) -> Option<usize> {
+    /// Helper function to check if a tree is visible in a certain direction
+    fn is_tree_visible_in_direction(
+        grid: &Grid<Tree>,
+        coord: &GridCoord,
+        direction: &Direction,
+    ) -> bool {
+        let (dx, dy) = direction.get_dx_dy();
+        let tree_line = (1..).map_while(|i| {
+            let coord = GridCoord {
+                x: coord.x.checked_add_signed(dx * i)?,
+                y: coord.y.checked_add_signed(dy * i)?,
+            };
+            Some(grid.get_cell(&coord)?)
+        });
+        let mut is_visible = true;
+        let this_height = grid
+            .get_cell(coord)
+            .expect("Tree should exist in this cell!")
+            .height;
+        for tree in tree_line {
+            if tree.height >= this_height {
+                is_visible = false;
+                break;
             }
         }
+        is_visible
     }
 
-    // check if each tree is visible from right
-    for y in 0..tree_grid.height {
-        let mut tallest_height: i8 = -1;
-        for x in (0..tree_grid.width).rev() {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            if tree.height > tallest_height {
-                tree.visible_right = true;
-                tallest_height = tree.height;
-            }
-        }
-    }
-
-    // check if each tree is visible from top
-    for x in 0..tree_grid.width {
-        let mut tallest_height: i8 = -1;
-        for y in 0..tree_grid.height {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            if tree.height > tallest_height {
-                tree.visible_top = true;
-                tallest_height = tree.height;
-            }
-        }
-    }
-
-    // check if each tree is visible from bottom
-    for x in 0..tree_grid.width {
-        let mut tallest_height: i8 = -1;
-        for y in (0..tree_grid.height).rev() {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            if tree.height > tallest_height {
-                tree.visible_bottom = true;
-                tallest_height = tree.height;
-            }
-        }
-    }
+    // Build tree grid
+    let tree_grid: Grid<Tree> = build_tree_grid_from_input(input);
 
     // Find out how many trees are visible
+    let all_directions = [
+        Direction::DOWN,
+        Direction::UP,
+        Direction::RIGHT,
+        Direction::LEFT,
+    ];
     let num_visible_trees = tree_grid
         .iter_all_cells()
-        .filter(|(_, tree)| {
-            tree.visible_bottom || tree.visible_top || tree.visible_left || tree.visible_right
+        .filter(|(coord, _)| {
+            all_directions
+                .iter()
+                .any(|direction| is_tree_visible_in_direction(&tree_grid, coord, direction))
         })
         .count();
 
@@ -94,119 +92,47 @@ pub fn part_one(input: &str) -> Option<usize> {
 }
 
 pub fn part_two(input: &str) -> Option<u32> {
-    #[derive(Clone, Default, Debug)]
-    struct Tree {
-        height: i8,
-        num_visible_top: u32,
-        num_visible_left: u32,
-        num_visible_right: u32,
-        num_visible_bottom: u32,
-    }
-    impl Tree {
-        fn calc_scenic_score(&self) -> u32 {
-            self.num_visible_bottom
-                * self.num_visible_top
-                * self.num_visible_left
-                * self.num_visible_right
-        }
-    }
-
-    let mut input_lines = input.lines().peekable();
-    let mut tree_grid: Grid<Tree> = Grid::new(
-        input_lines.peek().unwrap().len(),
-        input_lines.clone().count(),
-    );
-
-    for (y, input_line) in input_lines.enumerate() {
-        for (x, raw_height) in input_line.chars().enumerate() {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            tree.height =
-                i8::from_str_radix(&raw_height.to_string(), 10).expect("Couldn't parse height!");
-        }
-    }
-
-    // for each tree, check how many trees are visible from left
-    for y in 0..tree_grid.height {
-        let mut prev_tree_heights: Vec<i8> = vec![];
-        for x in 0..tree_grid.width {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            let mut num_visible: u32 = 0;
-            for prev_height in prev_tree_heights.iter().rev() {
-                num_visible += 1;
-                if *prev_height >= tree.height {
-                    break;
-                }
+    fn calc_visible_trees_in_direction(
+        grid: &Grid<Tree>,
+        coord: &GridCoord,
+        direction: Direction,
+    ) -> u32 {
+        let (dx, dy) = direction.get_dx_dy();
+        let tree_line = (1..).map_while(|i| {
+            let coord = GridCoord {
+                x: coord.x.checked_add_signed(dx * i)?,
+                y: coord.y.checked_add_signed(dy * i)?,
+            };
+            Some(grid.get_cell(&coord)?)
+        });
+        let mut num_visible_trees: u32 = 0;
+        let this_height = grid
+            .get_cell(coord)
+            .expect("Tree should exist in this cell!!")
+            .height;
+        for tree in tree_line {
+            num_visible_trees += 1;
+            if tree.height >= this_height {
+                break;
             }
-            tree.num_visible_left = num_visible;
-            prev_tree_heights.push(tree.height);
         }
+        num_visible_trees
     }
 
-    // for each tree, check how many trees are visible from right
-    for y in 0..tree_grid.height {
-        let mut prev_tree_heights: Vec<i8> = vec![];
-        for x in (0..tree_grid.width).rev() {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            let mut num_visible: u32 = 0;
-            for prev_height in prev_tree_heights.iter().rev() {
-                num_visible += 1;
-                if *prev_height >= tree.height {
-                    break;
-                }
-            }
-            tree.num_visible_right = num_visible;
-            prev_tree_heights.push(tree.height);
-        }
-    }
+    // Build the tree grid
+    let tree_grid: Grid<Tree> = build_tree_grid_from_input(input);
 
-    // for each tree, check how many trees are visible from top
-    for x in 0..tree_grid.width {
-        let mut prev_tree_heights: Vec<i8> = vec![];
-        for y in 0..tree_grid.height {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            let mut num_visible: u32 = 0;
-            for prev_height in prev_tree_heights.iter().rev() {
-                num_visible += 1;
-                if *prev_height >= tree.height {
-                    break;
-                }
-            }
-            tree.num_visible_top = num_visible;
-            prev_tree_heights.push(tree.height);
-        }
-    }
-
-    // for each tree, check how many trees are visible from bottom
-    for x in 0..tree_grid.width {
-        let mut prev_tree_heights: Vec<i8> = vec![];
-        for y in (0..tree_grid.height).rev() {
-            let tree = tree_grid
-                .get_cell_mut(GridCoord { x, y })
-                .expect("Cell not found!");
-            let mut num_visible: u32 = 0;
-            for prev_height in prev_tree_heights.iter().rev() {
-                num_visible += 1;
-                if *prev_height >= tree.height {
-                    break;
-                }
-            }
-            tree.num_visible_bottom = num_visible;
-            prev_tree_heights.push(tree.height);
-        }
-    }
-
-    // Calculate the scenic score of every tree, and find the largest one
+    // For each tree, calculate # of visible trees in all directions and calculate the scenic score
     let max_scenic_score = tree_grid
         .iter_all_cells()
-        .map(|(_, tree)| tree.calc_scenic_score())
+        .map(|(coord, _)| {
+            let top = calc_visible_trees_in_direction(&tree_grid, coord, Direction::UP);
+            let bottom = calc_visible_trees_in_direction(&tree_grid, coord, Direction::DOWN);
+            let left = calc_visible_trees_in_direction(&tree_grid, coord, Direction::LEFT);
+            let right = calc_visible_trees_in_direction(&tree_grid, coord, Direction::RIGHT);
+
+            top * bottom * left * right
+        })
         .max();
 
     max_scenic_score
