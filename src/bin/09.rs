@@ -99,8 +99,8 @@ pub fn part_two(input: &str) -> Option<usize> {
             head.step(&dir);
             let mut prev_tail = &head;
             for tail in tails.iter_mut() {
-               move_tail(tail, prev_tail);
-               prev_tail = tail;
+                move_tail(tail, prev_tail);
+                prev_tail = tail;
             }
             visited_coords.insert(tails.last().unwrap().clone());
         }
