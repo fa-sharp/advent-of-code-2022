@@ -16,3 +16,10 @@ pub fn parse_int_decimal(input: &str) -> IResult<&str, i32> {
         |out: &str| i32::from_str_radix(&str::replace(&out, "_", ""), 10),
     )(input)
 }
+
+pub fn parse_usize_decimal(input: &str) -> IResult<&str, usize> {
+    map_res(
+        recognize(many1(terminated(one_of("0123456789"), many0(char('_'))))),
+        |out: &str| usize::from_str_radix(&str::replace(&out, "_", ""), 10),
+    )(input)
+}
