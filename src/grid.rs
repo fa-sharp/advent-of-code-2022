@@ -40,7 +40,7 @@ where
         }
     }
 
-    fn is_in_bounds(&self, coord: &GridCoord) -> bool {
+    pub fn is_in_bounds(&self, coord: &GridCoord) -> bool {
         coord.x < self.width && coord.y < self.height
     }
 
@@ -58,6 +58,14 @@ where
         } else {
             self.data.get(coord)
         }
+    }
+
+    pub fn insert_cell(&mut self, coord: GridCoord, cell: T) -> Option<()> {
+        if self.is_in_bounds(&coord) {
+            self.data.insert(coord, cell);
+            return Some(());
+        }
+        None
     }
 
     pub fn iter_all_cells(&self) -> std::collections::hash_map::Iter<GridCoord, T> {
