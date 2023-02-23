@@ -96,7 +96,42 @@ pub fn part_one(input: &str) -> Option<u32> {
 }
 
 pub fn part_two(input: &str) -> Option<u32> {
-    None
+    let grid = parse_grid(input)?;
+    let mut visited_coords: HashMap<GridCoord, Option<GridCoord>> = HashMap::new();
+    let mut current_coords: HashSet<GridCoord> = HashSet::from_iter(
+        grid.iter_all_cells()
+            .filter_map(|(coords, square)| match *square {
+                Square::Start(0) => Some(*coords),
+                Square::Normal(0) => Some(*coords),
+                _ => None,
+            }),
+    );
+    let end_coords = grid
+        .iter_all_cells()
+        .find(|(_, square)| **square == Square::End(25))?
+        .0;
+
+    for coords in &current_coords {
+        visited_coords.insert(coords.clone(), None);
+    }
+
+    let mut num_steps = 0;
+    while !visited_coords.contains_key(end_coords) {
+        let mut next_coords: HashSet<GridCoord> = HashSet::new();
+        for current_coord in &current_coords {
+            for new_coord in find_walkable_neighbors(&grid, current_coord) {
+                if visited_coords.contains_key(&new_coord) {
+                    continue;
+                }
+                visited_coords.insert(new_coord, Some(current_coord.clone()));
+                next_coords.insert(new_coord);
+            }
+        }
+        current_coords = next_coords;
+        num_steps += 1;
+    }
+
+    Some(num_steps)
 }
 
 fn main() {
@@ -118,6 +153,6 @@ mod tests {
     #[test]
     fn test_part_two() {
         let input = advent_of_code::read_file("examples", 12);
-        assert_eq!(part_two(&input), None);
+        assert_eq!(part_two(&input), Some(29));
     }
 }
